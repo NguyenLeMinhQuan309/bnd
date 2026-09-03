@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "ES2020"
+    ],
+    "jsx": "react-native",
+    "jsxImportSource": "react",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    // "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"],
+    // "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "extends": "expo/tsconfig.base"
+}
