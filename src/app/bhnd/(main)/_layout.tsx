@@ -1,88 +1,22 @@
-import React, { useEffect } from 'react';
-import { useRouter } from 'expo-router';
-import { useAuth } from '@/src/hooks/useAuth';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import HomeScreen from './home';
-import ProductScreen from './product';
-import CartScreen from './cart';
-import OrdersScreen from './orders';
-import ProfileScreen from './profile';
-
-const Stack = createNativeStackNavigator();
-const Tab = createBottomTabNavigator();
-
-function MainNavigator() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName: any;
-
-          if (route.name === 'home') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'product') {
-            iconName = focused ? 'cube' : 'cube-outline';
-          } else if (route.name === 'cart') {
-            iconName = focused ? 'cart' : 'cart-outline';
-          } else if (route.name === 'orders') {
-            iconName = focused ? 'receipt' : 'receipt-outline';
-          } else if (route.name === 'profile') {
-            iconName = focused ? 'person' : 'person-outline';
-          }
-
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#149eee',
-        tabBarInactiveTintColor: 'gray',
-        tabBarStyle: {
-          borderTopWidth: 1,
-          borderTopColor: '#e0e0e0',
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 70,
-        },
-        
-      })}
-    >
-      <Tab.Screen 
-        name="home" 
-        component={HomeScreen}
-        options={{ tabBarLabel: 'Mua hàng' }}
-      />
-      <Tab.Screen 
-        name="product" 
-        component={ProductScreen}
-        options={{ tabBarLabel: 'Sản phẩm' }}
-      />
-      <Tab.Screen 
-        name="cart" 
-        component={CartScreen}
-        options={{ tabBarLabel: 'Giỏ hàng' }}
-      />
-      <Tab.Screen 
-        name="orders" 
-        component={OrdersScreen}
-        options={{ tabBarLabel: 'Đơn hàng' }}
-      />
-      <Tab.Screen 
-        name="profile" 
-        component={ProfileScreen}
-        options={{ tabBarLabel: 'Hồ sơ' }}
-      />
-    </Tab.Navigator>
-  );
-}
+import React, { useEffect } from "react";
+import { Tabs, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/src/hooks/useAuth";
+import { Ionicons } from "@expo/vector-icons";
+import { theme } from "@/src/styles/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
 
 export default function MainLayout() {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const responsive = useResponsive();
+  const getTabIconSize = (size: number) =>
+    responsive.isTablet ? size : responsive.font(size);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.replace('/bhnd/(auth)/login');
+      router.replace("/bhnd/(auth)/login");
     }
   }, [isAuthenticated, router]);
 
@@ -91,5 +25,92 @@ export default function MainLayout() {
     return null;
   }
 
-  return <MainNavigator />;
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarStyle: {
+          backgroundColor: theme.colors.surface,
+          borderTopWidth: 0, // bỏ đường kẻ cứng, dùng bóng đổ nhẹ để tách khỏi nội dung
+          paddingBottom: insets.bottom,
+          paddingTop: responsive.ms(6),
+          height: responsive.ms(66) + insets.bottom,
+          ...theme.shadow.raised,
+        },
+        tabBarLabelStyle: {
+          fontSize: responsive.font(10),
+          fontWeight: "600",
+          marginTop: 2,
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="home"
+        options={{
+          tabBarLabel: "Mua hàng",
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              size={getTabIconSize(size)}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="product"
+        options={{
+          tabBarLabel: "Sản phẩm",
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons
+              name={focused ? "cube" : "cube-outline"}
+              size={getTabIconSize(size)}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="cart"
+        options={{
+          tabBarLabel: "Giỏ hàng",
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons
+              name={focused ? "cart" : "cart-outline"}
+              size={getTabIconSize(size)}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="orders"
+        options={{
+          tabBarLabel: "Đơn hàng",
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons
+              name={focused ? "receipt" : "receipt-outline"}
+              size={getTabIconSize(size)}
+              color={color}
+            />
+          ),
+        }}
+      />
+      {/* <Tabs.Screen
+        name="profile"
+        options={{
+          tabBarLabel: "Hồ sơ",
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons
+              name={focused ? "person" : "person-outline"}
+              size={getTabIconSize(size)}
+              color={color}
+            />
+          ),
+        }}
+      /> */}
+    </Tabs>
+  );
 }

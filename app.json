@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "Bannoidia",
+    "name": "BND",
     "slug": "bannoidia",
     "version": "1.0.0",
+    "icon": "./src/assets/icons/logoVF.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
@@ -26,7 +27,16 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép Bannoidia sử dụng camera để quét mã vạch."
+        }
+      ],
+      "expo-splash-screen",
+      "expo-status-bar"
     ],
     "scheme": "bannoidia",
     "extra": {

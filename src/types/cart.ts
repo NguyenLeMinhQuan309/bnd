@@ -1,11 +1,11 @@
 import { Product } from './product';
-import { AvailableProduct } from './product';
+// import { AvailableProduct } from './product';
 
 export interface CartItem {
   _id: string;
   customerCode: string;
   product_id: Product;
-  availableProduct_id?: AvailableProduct;
+  // availableProduct_id?: AvailableProduct;
   quantity: number;
   price: number;
   subtotal: number;

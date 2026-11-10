@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Product, ProductsResponse, Category } from '../types';
 import { productService } from '../services/productService';
-import { get } from 'react-native/Libraries/TurboModule/TurboModuleRegistry';
+import { availableProductService } from '../services/availableProductService';
 
 export const useProducts = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -67,14 +67,18 @@ const getProducts = useCallback(async() => {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await productService.getProducts();
-      setProducts(response.data);
+      const availableProducts = await availableProductService.getAvailableProducts();
+      const products = availableProducts
+        .map((availableProduct) => availableProduct.product_id)
+        .filter((product): product is Product => Boolean(product));
+
+      setProducts(products);
       setPagination({
-        page: response.pagination.page,
-        limit: response.pagination.limit,
-        total: response.pagination.total,
+        page: 1,
+        limit: products.length,
+        total: products.length,
       });
-      return response.data;
+      return products;
     } catch (err: any) {
       setError(err.message || 'Failed to fetch products');
       return [];

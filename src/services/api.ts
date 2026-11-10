@@ -35,6 +35,7 @@ class APIClient {
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json',
+        'X-Client-Source': 'app', // Đánh dấu mọi request từ app mobile này để backend phân biệt với admin web
       },
     });
 

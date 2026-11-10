@@ -1,8 +1,20 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Modal, TextInput, Dimensions, Animated, Easing } from 'react-native';
-import { Product } from '../../types';
-import { formatPrice } from '../../utils/formatting';
-import { useCart } from '../../hooks/useCart';
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
+  Easing,
+  ActivityIndicator,
+} from "react-native";
+import { Product } from "../../types";
+import { formatPrice } from "../../utils/formatting";
+import { useCart } from "../../hooks/useCart";
+import { theme } from "../../styles/theme";
+import { useResponsive } from "../../hooks/useResponsive";
+import { getProductImageUrl } from "../../services/imageService";
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -17,14 +29,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onPress,
   onAddToCart,
 }) => {
-  const [showQuantityModal, setShowQuantityModal] = useState(false);
-  const [quantity, setQuantity] = useState(1);
-  // console.log('ProductCard rendered for product:', product?.name);
+  const r = useResponsive();
+  const styles = useMemo(() => createStyles(r), [r.width, r.height]);
+
+  const [quantity, setQuantity] = useState(0);
+  const [isAdding, setIsAdding] = useState(false);
   const mountAnim = useRef(new Animated.Value(0)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
   const addBtnScale = useRef(new Animated.Value(1)).current;
-  const totalScale = useRef(new Animated.Value(1)).current;
-  const {addItem} = useCart();
+  const { addItem } = useCart();
+
   useEffect(() => {
     Animated.timing(mountAnim, {
       toValue: 1,
@@ -34,347 +48,264 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     }).start();
   }, [mountAnim]);
 
-  const handleAddToCart = async () => {
-    try {
-      await addItem(
-        product._id,
-        quantity,
-        price
-      );
-      setShowQuantityModal(false);
-      setQuantity(1);
-    } catch (error) {
-      console.error('Failed to add to cart:', error);
-    }
-  };
-
-  const handleOpenQuantitySelector = () => {
-    setShowQuantityModal(true);
-  };
-
-  const handleQuantityChange = (text: string) => {
-    const num = parseInt(text, 10);
-    if (text === '') {
-      setQuantity(1);
-    } else if (!isNaN(num) && num > 0) {
-      setQuantity(num);
-    }
-  };
-
-  const incrementQuantity = () => setQuantity(q => q + 1);
-  const decrementQuantity = () => setQuantity(q => Math.max(1, q - 1));
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.timing(totalScale, { toValue: 1.06, duration: 120, useNativeDriver: true }),
-      Animated.timing(totalScale, { toValue: 1, duration: 220, useNativeDriver: true }),
-    ]).start();
-  }, [quantity, totalScale]);
-
   const price = product?.prices?.[0]?.price || 0;
 
+  const handleAddToCart = async () => {
+    if (isAdding) return; // chặn bấm liên tục / double submit
+    setIsAdding(true);
+    try {
+      await addItem(product._id, quantity, price);
+      setQuantity(0); // reset về 1 sau khi thêm thành công
+    } catch (error) {
+      console.error("Failed to add to cart:", error);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const incrementQuantity = () => setQuantity((q) => q + 1);
+  const decrementQuantity = () => setQuantity((q) => Math.max(0, q - 1));
+
   return (
-    <>
-      <AnimatedTouchable
-        style={[
-          styles.card,
-          {
-            opacity: mountAnim,
-            transform: [
-              { translateY: mountAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
-              { scale: pressScale },
-            ],
-          },
-        ]}
-        onPress={onPress}
-        onPressIn={() => Animated.spring(pressScale, { toValue: 0.985, friction: 8, useNativeDriver: true }).start()}
-        onPressOut={() => Animated.spring(pressScale, { toValue: 1, friction: 8, useNativeDriver: true }).start()}
-      >
-        {/* image placeholder (optional) */}
-        {product?.image ? (
-          <Image source={{ uri: product.image }} style={styles.image} />
-        ) : (
-          <View style={styles.imagePlaceholder} />
-        )}
+    <AnimatedTouchable
+      style={[
+        styles.card,
+        {
+          opacity: mountAnim,
+          transform: [
+            {
+              translateY: mountAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [10, 0],
+              }),
+            },
+            { scale: pressScale },
+          ],
+        },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.92}
+    >
+      {product.id ? (
+        <Image
+          source={{ uri: getProductImageUrl(product.id) }}
+          style={styles.image}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.imagePlaceholder} />
+      )}
 
-        <View style={styles.content}>
-          <View style={styles.productDetails}>
-            <Text style={styles.name} numberOfLines={2}>{product?.name || ''}</Text>
-            {product?.specifications ? (
-              <Text style={styles.specs} numberOfLines={1}>{product.specifications}</Text>
-            ) : null}
-            <View style={styles.priceContainer}>
-              <Text style={styles.price}>{formatPrice(price)}</Text>
-            </View>
-          </View>
+      <View style={styles.content}>
+        <View>
+          {/* Luôn chừa đúng 2 dòng cho tên (chiều cao = 2 x lineHeight) */}
+          <Text
+            style={styles.name}
+            numberOfLines={2}
+            maxFontSizeMultiplier={1.2}
+          >
+            {product?.name || ""}
+          </Text>
 
-          {onAddToCart && (
-            <Animated.View style={{ transform: [{ scale: addBtnScale }] }}>
+          {/* Luôn chừa đúng 1 dòng cho specs */}
+          <Text
+            style={styles.specs}
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.2}
+          >
+            {product?.specifications || " "}
+          </Text>
+
+          <Text
+            style={styles.price}
+            maxFontSizeMultiplier={1.2}
+            numberOfLines={1}
+          >
+            {formatPrice(price)}
+          </Text>
+        </View>
+
+        {onAddToCart !== undefined && (
+          <View style={styles.actionRow}>
+            <View style={styles.stepper}>
               <TouchableOpacity
-                style={styles.addButton}
-                onPress={handleOpenQuantitySelector}
-                activeOpacity={0.85}
-                onPressIn={() => Animated.spring(addBtnScale, { toValue: 0.98, useNativeDriver: true }).start()}
-                onPressOut={() => Animated.spring(addBtnScale, { toValue: 1, useNativeDriver: true }).start()}
+                style={styles.stepperBtn}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  decrementQuantity();
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
               >
-                <View style={styles.plusIcon}>
-                  <View style={styles.plusBarHoriz} />
-                  <View style={styles.plusBarVert} />
-                </View>
-                <Text style={styles.addButtonText}>Thêm</Text>
+                <Text style={styles.stepperBtnText}>−</Text>
+              </TouchableOpacity>
+              <Text style={styles.stepperValue} maxFontSizeMultiplier={1.1}>
+                {quantity}
+              </Text>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  incrementQuantity();
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <Text style={styles.stepperBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* flex: 1 để nút Thêm tự co giãn theo bề rộng thẻ còn lại,
+                không bị tràn trên màn hình nhỏ */}
+            <Animated.View
+              style={[
+                styles.addWrapper,
+                { transform: [{ scale: addBtnScale }] },
+              ]}
+            >
+              <TouchableOpacity
+                style={[styles.addButton, isAdding && styles.addButtonDisabled]}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  handleAddToCart();
+                }}
+                activeOpacity={0.85}
+                disabled={isAdding}
+                onPressIn={() =>
+                  Animated.spring(addBtnScale, {
+                    toValue: 0.95,
+                    useNativeDriver: true,
+                  }).start()
+                }
+                onPressOut={() =>
+                  Animated.spring(addBtnScale, {
+                    toValue: 1,
+                    useNativeDriver: true,
+                  }).start()
+                }
+              >
+                {isAdding ? (
+                  <ActivityIndicator
+                    color={theme.colors.onPrimary}
+                    size="small"
+                  />
+                ) : (
+                  <Text
+                    style={styles.addButtonText}
+                    maxFontSizeMultiplier={1.1}
+                  >
+                    Thêm
+                  </Text>
+                )}
               </TouchableOpacity>
             </Animated.View>
-          )}
-        </View>
-      </AnimatedTouchable>
-
-      <Modal visible={showQuantityModal} transparent animationType="slide" onRequestClose={() => setShowQuantityModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setShowQuantityModal(false)}>
-                <Text style={styles.closeButton}>✕</Text>
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Chọn số lượng</Text>
-              <View style={{ width: 24 }} />
-            </View>
-
-            <View style={styles.productInfo}>
-              <Text style={styles.productName}>{product?.name || ''}</Text>
-              <Text style={styles.productPrice}>{formatPrice(price)} / {product?.unit || 'sp'} ({product?.specifications || ''})</Text>
-            </View>
-
-            <View style={styles.quantitySelector}>
-              <TouchableOpacity style={styles.quantityButtonSmall} onPress={decrementQuantity}><Text style={styles.quantityButtonText}>−</Text></TouchableOpacity>
-              <TextInput style={styles.quantityInput} value={String(quantity)} onChangeText={handleQuantityChange} keyboardType="number-pad" maxLength={5} textAlign="center" />
-              <TouchableOpacity style={styles.quantityButtonSmall} onPress={incrementQuantity}><Text style={styles.quantityButtonText}>+</Text></TouchableOpacity>
-            </View>
-
-            <View style={styles.totalPrice}>
-              <Text style={styles.totalLabel}>Tổng cộng:</Text>
-              <Animated.Text style={[styles.totalAmount, { transform: [{ scale: totalScale }] }]}>{formatPrice(price * quantity)}</Animated.Text>
-            </View>
-
-            <TouchableOpacity style={styles.confirmButton} onPress={handleAddToCart}>
-              <Text style={styles.confirmButtonText}>Thêm vào giỏ hàng</Text>
-            </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
-    </>
+        )}
+      </View>
+    </AnimatedTouchable>
   );
 };
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-    minHeight: 170,
-    width: '100%',
-  },
-  image: {
-    width: '100%',
-    height: 110,
-    backgroundColor: '#F0F0F0',
-  },
-  imagePlaceholder: {
-    width: '100%',
-    height: 110,
-    backgroundColor: '#f5f5f5',
-  },
-  content: {
-    padding: 10,
-    flex: 1,
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-  },
-  productDetails: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#222222',
-    marginBottom: 4,
-  },
-  specs: {
-    fontSize: 12,
-    color: '#777777',
-    marginBottom: 6,
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  price: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#f10e0e',
-  },
-  originalPrice: {
-    fontSize: 12,
-    color: '#999999',
-    textDecorationLine: 'line-through',
-    marginLeft: 8,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f10e0e',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    minWidth: 72,
-    justifyContent: 'center',
-  },
-  plusIcon: {
-    width: 18,
-    height: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-    position: 'relative',
-  },
-  plusBarHoriz: {
-    width: 10,
-    height: 2,
-    backgroundColor: '#fff',
-    borderRadius: 2,
-  },
-  plusBarVert: {
-    position: 'absolute',
-    width: 2,
-    height: 10,
-    backgroundColor: '#fff',
-    borderRadius: 2,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 32,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  closeButton: {
-    fontSize: 24,
-    color: '#666666',
-    width: 24,
-    textAlign: 'center',
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#333333',
-  },
-  productInfo: {
-    paddingBottom: 16,
-    borderBottomColor: '#F0F0F0',
-    borderBottomWidth: 1,
-    marginBottom: 20,
-  },
-  productName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 8,
-  },
-  productPrice: {
-    fontSize: 13,
-    color: '#f10e0e',
-    fontWeight: '600',
-  },
-  quantitySelector: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    // `gap` is not supported on all React Native platforms; use spacing via margins
-  },
-  quantityButtonSmall: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderColor: '#E0E0E0',
-    borderWidth: 1,
-  },
-  quantityButtonText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#f10e0e',
-  },
-  quantityInput: {
-    flex: 1,
-    height: 44,
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E0E0E0',
-    borderWidth: 1,
-    borderRadius: 8,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-    paddingHorizontal: 12,
-  },
-  totalPrice: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#F9F9F9',
-    borderRadius: 8,
-    marginBottom: 20,
-  },
-  totalLabel: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  totalAmount: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#f10e0e',
-  },
-  confirmButton: {
-    backgroundColor: '#f10e0e',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  confirmButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-});
+const createStyles = (r: ReturnType<typeof useResponsive>) => {
+  const nameFont = r.font(13);
+  const nameLine = Math.round(nameFont * 1.4);
+  const specFont = r.font(12);
+  const specLine = Math.round(specFont * 1.35);
+  const stepBtn = Math.max(24, Math.round(r.ms(24)));
+
+  return StyleSheet.create({
+    card: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      overflow: "hidden",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+      ...theme.shadow.card,
+      // Chiều rộng do cha quyết định, chiều cao suy ra từ ảnh (aspectRatio)
+      // + nội dung có chiều cao cố định theo font, nên các thẻ cùng hàng
+      // luôn bằng nhau ở mọi độ phân giải.
+      width: "100%",
+    },
+    image: {
+      width: "100%",
+      aspectRatio: 1,
+      backgroundColor: theme.colors.surfaceMuted,
+    },
+    imagePlaceholder: {
+      width: "100%",
+      aspectRatio: 1,
+      backgroundColor: theme.colors.surfaceMuted,
+    },
+    content: {
+      padding: r.ms(12),
+    },
+    name: {
+      fontSize: nameFont,
+      lineHeight: nameLine,
+      height: nameLine * 2,
+      fontWeight: "700",
+      color: theme.colors.text,
+      marginBottom: 2,
+    },
+    specs: {
+      fontSize: specFont,
+      lineHeight: specLine,
+      height: specLine,
+      color: theme.colors.textMuted,
+      marginBottom: 6,
+    },
+    price: {
+      fontSize: r.font(16),
+      fontWeight: "800",
+      color: theme.colors.danger,
+    },
+    actionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: r.ms(10),
+    },
+    stepper: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.colors.surfaceMuted,
+      borderRadius: theme.radius.sm,
+      paddingHorizontal: 2,
+    },
+    stepperBtn: {
+      width: stepBtn,
+      height: stepBtn,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    stepperBtnText: {
+      fontSize: r.font(16),
+      fontWeight: "700",
+      color: theme.colors.primary,
+    },
+    stepperValue: {
+      fontSize: r.font(13),
+      fontWeight: "700",
+      color: theme.colors.text,
+      minWidth: r.ms(20),
+      textAlign: "center",
+    },
+    addWrapper: {
+      flex: 1,
+      marginLeft: r.ms(6),
+    },
+    addButton: {
+      height: Math.max(32, Math.round(r.ms(34))),
+      minWidth: 44,
+      borderRadius: theme.radius.sm,
+      backgroundColor: theme.colors.primary,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    addButtonDisabled: {
+      opacity: 0.7,
+    },
+    addButtonText: {
+      color: theme.colors.onPrimary,
+      fontSize: r.font(12),
+      fontWeight: "700",
+    },
+  });
+};

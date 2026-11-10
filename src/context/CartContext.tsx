@@ -1,7 +1,14 @@
-import React, { createContext, useState, useCallback, useEffect } from 'react';
-import { CartItem, CartState, CouponCode } from '../types';
-import { cartService } from '../services/cartService';
-import { useAuth } from '../hooks/useAuth';
+import React, {
+  createContext,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+} from "react";
+import { CartItem, CartState, CouponCode } from "../types";
+import { cartService } from "../services/cartService";
+import { useAuth } from "../hooks/useAuth";
+import { useNotification } from "../hooks/useNotification";
 
 export interface CartContextType {
   items: CartItem[];
@@ -12,7 +19,11 @@ export interface CartContextType {
   coupon: CouponCode | undefined;
   isLoading: boolean;
   error: string | null;
-  addItem: (productId: string,  quantity: number, price: number) => Promise<void>;
+  addItem: (
+    productId: string,
+    quantity: number,
+    price: number,
+  ) => Promise<void>;
   removeItem: (cartItemId: string) => Promise<void>;
   updateQuantity: (cartItemId: string, quantity: number) => Promise<void>;
   applyCoupon: (code: string) => Promise<void>;
@@ -21,10 +32,24 @@ export interface CartContextType {
   fetchCart: () => Promise<void>;
 }
 
-export const CartContext = createContext<CartContextType | undefined>(undefined);
+export const CartContext = createContext<CartContextType | undefined>(
+  undefined,
+);
 
-export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const recalcTotals = (
+  items: CartItem[],
+  shippingCost: number,
+  discount: number,
+) => {
+  const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+  return { subtotal, total: subtotal + shippingCost - discount };
+};
+
+export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { user } = useAuth();
+  const notification = useNotification();
   const [state, setState] = useState<CartState>({
     items: [],
     total: 0,
@@ -35,7 +60,18 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     error: null,
   });
 
-  // Fetch cart from backend
+  // Giữ debounce timer riêng cho từng cartItemId
+  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+    {},
+  );
+
+  useEffect(() => {
+    // Dọn timer khi unmount, tránh gọi setState sau khi component đã gỡ
+    return () => {
+      Object.values(debounceTimers.current).forEach(clearTimeout);
+    };
+  }, []);
+
   const fetchCart = useCallback(async () => {
     if (!user?.code) return;
 
@@ -52,106 +88,143 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       setState((prev) => ({
         ...prev,
-        error: err.message || 'Failed to fetch cart',
+        error: err.message || "Failed to fetch cart",
         isLoading: false,
       }));
     }
   }, [user?.code]);
 
-  // Add item to cart
-  // const addItem = useCallback(
-  //   async (productId: string, availableProductId: string, quantity: number, price: number) => {
-  //     if (!user?.code) {
-  //       setState((prev) => ({ ...prev, error: 'User not authenticated' }));
-  //       return;
-  //     }
-
-  //     try {
-  //       setState((prev) => ({ ...prev, isLoading: true, error: null }));
-  //       const newItem = await cartService.addToCart(user.code, productId, availableProductId, quantity, price);
-  //       setState((prev) => ({
-  //         ...prev,
-  //         items: [...prev.items, newItem],
-  //         subtotal: prev.subtotal + newItem.subtotal,
-  //         total: prev.total + newItem.subtotal,
-  //         isLoading: false,
-  //       }));
-  //     } catch (err: any) {
-  //       setState((prev) => ({
-  //         ...prev,
-  //         error: err.message || 'Failed to add item to cart',
-  //         isLoading: false,
-  //       }));
-  //     }
-  //   },
-  //   [user?.code]
-  // );
+  // Add item to cart — không fetchCart() lại toàn bộ, chỉ merge kết quả trả về
   const addItem = useCallback(
-  async (productId: string, quantity: number, price: number) => {
-    if (!user?.code) {
-      setState((prev) => ({ ...prev, error: 'User not authenticated' }));
-      return;
-    }
+    async (productId: string, quantity: number, price: number) => {
+      if (!user?.code) {
+        setState((prev) => ({ ...prev, error: "User not authenticated" }));
+        return;
+      }
 
-    try {
-      setState((prev) => ({ ...prev, isLoading: true, error: null }));
-      
-      // 1. Gọi API thêm vào giỏ
-      await cartService.addToCart(user.code, productId,  quantity, price);
-      
-      // 2. Gọi lại hàm fetchCart để cập nhật lại toàn bộ State giỏ hàng chuẩn từ API
-      await fetchCart(); 
-      
-      // Tắt loading sau khi đã fetch xong
-      setState((prev) => ({ ...prev, isLoading: false }));
+      try {
+        setState((prev) => ({ ...prev, error: null }));
 
-    } catch (err: any) {
-      setState((prev) => ({
-        ...prev,
-        error: err.message || 'Failed to add item to cart',
-        isLoading: false,
-      }));
-    }
-  },
-  [user?.code, fetchCart] // Nhớ thêm fetchCart vào dependency nếu có
-);
+        // Chỉ 1 lần gọi API — backend trả về item đã thêm/cộng dồn
+        const updatedItem = await cartService.addToCart(
+          user.code,
+          productId,
+          quantity,
+          price,
+        );
 
-  // Remove item from cart
+        setState((prev) => {
+          const existingIndex = prev.items.findIndex(
+            (item) => item._id === updatedItem._id,
+          );
+          const newItems =
+            existingIndex >= 0
+              ? prev.items.map((item, idx) =>
+                  idx === existingIndex ? updatedItem : item,
+                )
+              : [...prev.items, updatedItem];
+
+          const { subtotal, total } = recalcTotals(
+            newItems,
+            prev.shippingCost,
+            prev.discount,
+          );
+          return { ...prev, items: newItems, subtotal, total };
+        });
+        notification.success(
+          quantity === 1
+            ? "Đã thêm 1 sản phẩm vào giỏ hàng"
+            : `Đã thêm ${quantity} sản phẩm vào giỏ hàng`,
+        );
+      } catch (err: any) {
+        const message = err.message || "Không thể thêm sản phẩm vào giỏ hàng";
+        setState((prev) => ({ ...prev, error: message }));
+        notification.error(message, { title: "Thêm vào giỏ hàng thất bại" });
+      }
+    },
+    [user?.code, notification],
+  );
+
+  // Remove item from cart — optimistic (giữ nguyên, đã đúng)
   const removeItem = useCallback(async (cartItemId: string) => {
+    let previousItems: CartItem[] = [];
+
+    setState((prev) => {
+      previousItems = prev.items;
+      const newItems = prev.items.filter((item) => item._id !== cartItemId);
+      const { subtotal, total } = recalcTotals(
+        newItems,
+        prev.shippingCost,
+        prev.discount,
+      );
+      return { ...prev, items: newItems, subtotal, total, error: null };
+    });
+
     try {
-      setState((prev) => ({ ...prev, isLoading: true, error: null }));
       await cartService.removeFromCart(cartItemId);
-      await fetchCart();
     } catch (err: any) {
-      setState((prev) => ({
-        ...prev,
-        error: err.message || 'Failed to remove item from cart',
-        isLoading: false,
-      }));
+      setState((prev) => {
+        const { subtotal, total } = recalcTotals(
+          previousItems,
+          prev.shippingCost,
+          prev.discount,
+        );
+        return {
+          ...prev,
+          items: previousItems,
+          subtotal,
+          total,
+          error: err.message || "Failed to remove item from cart",
+        };
+      });
     }
-  }, [fetchCart]);
+  }, []);
 
-  // Update item quantity
-  const updateQuantity = useCallback(async (cartItemId: string, quantity: number) => {
-    if (quantity <= 0) {
-      await removeItem(cartItemId);
-      return;
-    }
+  // Update quantity — optimistic + debounce (sửa chính ở đây)
+  const updateQuantity = useCallback(
+    async (cartItemId: string, quantity: number) => {
+      if (quantity <= 0) {
+        await removeItem(cartItemId);
+        return;
+      }
 
-    try {
-      setState((prev) => ({ ...prev, isLoading: true, error: null }));
-      await cartService.updateCartItem(cartItemId, quantity);
-      await fetchCart();
-    } catch (err: any) {
-      setState((prev) => ({
-        ...prev,
-        error: err.message || 'Failed to update quantity',
-        isLoading: false,
-      }));
-    }
-  }, [fetchCart, removeItem]);
+      // 1. Cập nhật UI NGAY LẬP TỨC — người dùng thấy phản hồi tức thì dù bấm liên tục
+      setState((prev) => {
+        const newItems = prev.items.map((item) =>
+          item._id === cartItemId
+            ? { ...item, quantity, subtotal: item.price * quantity }
+            : item,
+        );
+        const { subtotal, total } = recalcTotals(
+          newItems,
+          prev.shippingCost,
+          prev.discount,
+        );
+        return { ...prev, items: newItems, subtotal, total, error: null };
+      });
 
-  // Apply coupon (TODO: implement on backend)
+      // 2. Huỷ request đang chờ (nếu có) cho đúng item này
+      if (debounceTimers.current[cartItemId]) {
+        clearTimeout(debounceTimers.current[cartItemId]);
+      }
+
+      // 3. Chỉ thực sự gửi API sau 400ms không bấm thêm — gộp nhiều lần bấm thành 1 request
+      debounceTimers.current[cartItemId] = setTimeout(async () => {
+        try {
+          await cartService.updateCartItem(cartItemId, quantity);
+        } catch (err: any) {
+          // Rollback bằng cách đồng bộ lại từ server nếu request cuối cùng thất bại
+          setState((prev) => ({
+            ...prev,
+            error: err.message || "Failed to update quantity",
+          }));
+          await fetchCart();
+        }
+      }, 400);
+    },
+    [removeItem, fetchCart],
+  );
+
   const applyCoupon = useCallback(async (code: string) => {
     try {
       setState((prev) => ({ ...prev, isLoading: true }));
@@ -162,7 +235,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         coupon: {
           code,
           discount: result.discount,
-          type: 'percentage',
+          type: "percentage",
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         },
         isLoading: false,
@@ -170,30 +243,24 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       setState((prev) => ({
         ...prev,
-        error: err.message || 'Invalid coupon code',
+        error: err.message || "Invalid coupon code",
         isLoading: false,
       }));
     }
   }, []);
 
-  // Remove coupon
   const removeCoupon = useCallback(async () => {
     try {
       await cartService.removeCoupon();
-      setState((prev) => ({
-        ...prev,
-        discount: 0,
-        coupon: undefined,
-      }));
+      setState((prev) => ({ ...prev, discount: 0, coupon: undefined }));
     } catch (err: any) {
       setState((prev) => ({
         ...prev,
-        error: err.message || 'Failed to remove coupon',
+        error: err.message || "Failed to remove coupon",
       }));
     }
   }, []);
 
-  // Clear cart
   const clearCart = useCallback(async () => {
     if (!user?.code) return;
 
@@ -212,7 +279,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       setState((prev) => ({
         ...prev,
-        error: err.message || 'Failed to clear cart',
+        error: err.message || "Failed to clear cart",
         isLoading: false,
       }));
     }

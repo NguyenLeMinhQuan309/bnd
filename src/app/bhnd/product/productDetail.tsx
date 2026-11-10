@@ -46,8 +46,8 @@ export default function ProductDetailScreen() {
 		if (!product) return;
 		setAdding(true);
 		try {
-			// Use product.id as both productId and availableProductId when AvailableProduct not present
-			await addItem(product.id || String(product.id), product.id || String(product.id), quantity, product.price || 0);
+				const price = product.prices?.[0]?.price || 0;
+				await addItem(product._id || product.id, quantity, price);
 			router.push('/bhnd/(main)/cart');
 		} catch (err) {
 			console.warn('Failed to add to cart', err);
@@ -81,7 +81,7 @@ export default function ProductDetailScreen() {
 
 				<View style={styles.info}>
 					<Text style={styles.name}>{product.name}</Text>
-					<Text style={styles.price}>{formatPrice(product.price)}</Text>
+					<Text style={styles.price}>{formatPrice(product.prices?.[0]?.price || 0)}</Text>
 					<Text style={styles.specs}>{product.specifications}</Text>
 
 					<Text style={styles.desc}>{product.description}</Text>

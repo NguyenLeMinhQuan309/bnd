@@ -3,9 +3,11 @@
  */
 
 export interface AuthUser {
-  code:string;
-  name:string;
-  password:string;
+  code: string;
+  name?: string;
+  password?: string;
+  address?: string;
+  nghiviec?: boolean;
 }
 
 export interface LoginRequest {

@@ -40,3 +40,8 @@ export interface ProductsResponse {
     pages: number;
   };
 }
+
+export interface AvailableProduct {
+  product_id: Product;
+  stt: number;
+}

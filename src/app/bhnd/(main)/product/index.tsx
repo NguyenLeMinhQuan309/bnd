@@ -1,54 +1,121 @@
-import React, { useEffect, useMemo, useState, useCallback, memo } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, memo } from "react";
 import {
   View,
   FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   RefreshControl,
   Modal,
-} from 'react-native';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { useProducts } from '../../../../hooks/useProducts';
-import { Header } from '../../../../components/common/Header';
-import { ProductCard } from '../../../../components/product/ProductCard';
-import { ProductList } from '../../../../components/product/ProductList';
-import { Loading } from '../../../../components/common/Loading';
-import { EmptyState } from '../../../../components/common/EmptyState';
-import { useLocalSearchParams } from 'expo-router';
-import { useRoute } from '@react-navigation/native';
+  Alert,
+} from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useProducts } from "../../../../hooks/useProducts";
+import { useCart } from "../../../../hooks/useCart";
+import { Header } from "../../../../components/common/Header";
+import { ProductCard } from "../../../../components/product/ProductCard";
+import { ProductList } from "../../../../components/product/ProductList";
+import { Loading } from "../../../../components/common/Loading";
+import { EmptyState } from "../../../../components/common/EmptyState";
+import { useLocalSearchParams } from "expo-router";
+import { theme } from "@/src/styles/theme";
+import { useResponsive } from "@/src/hooks/useResponsive";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const MAX_CONTENT_WIDTH = 1200;
+
+// Mảng rỗng dùng chung: giữ nguyên tham chiếu giữa các lần render để useMemo không chạy lại
+const EMPTY_LIST: any[] = [];
+
+type ProductScreenStyles = ReturnType<typeof createStyles>;
+
+// Tham số từ expo-router có thể là string hoặc string[]
+const firstParam = (value?: string | string[]) =>
+  Array.isArray(value) ? value[0] : value;
 
 const ProductListRow = memo(function ProductListRow({
   item,
   viewMode,
   onAddToCart,
+  styles,
 }: {
   item: any;
-  viewMode: 'card' | 'list';
-  onAddToCart: (productId?: string) => void;
+  viewMode: "card" | "list";
+  onAddToCart: (product: any) => void;
+  styles: ProductScreenStyles;
 }) {
+  const handleAdd = useCallback(() => onAddToCart(item), [onAddToCart, item]);
+
   return (
-    <View style={viewMode === 'card' ? styles.cardWrapper : styles.listWrapper}>
-      {viewMode === 'card' ? (
-        <ProductCard product={item} onAddToCart={() => onAddToCart(item?._id)} />
+    <View style={viewMode === "card" ? styles.cardWrapper : styles.listWrapper}>
+      {viewMode === "card" ? (
+        <ProductCard product={item} onAddToCart={handleAdd} />
       ) : (
-        <ProductList product={item} onAddToCart={() => onAddToCart(item?._id)} />
+        <ProductList product={item} onAddToCart={handleAdd} />
       )}
     </View>
   );
 });
 
+// Một dòng lựa chọn danh mục trong modal ("Tất cả" cũng dùng chung component này)
+const CategoryOption = memo(function CategoryOption({
+  id,
+  label,
+  isActive,
+  onSelect,
+  styles,
+}: {
+  id: string | null;
+  label: string;
+  isActive: boolean;
+  onSelect: (id: string | null) => void;
+  styles: ProductScreenStyles;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.optionItem, isActive && styles.optionItemActive]}
+      onPress={() => onSelect(id)}
+      activeOpacity={0.7}
+    >
+      <Text style={[styles.optionText, isActive && styles.optionTextActive]}>
+        {label}
+      </Text>
+      {isActive && (
+        <Ionicons name="checkmark" size={18} color={theme.colors.primary} />
+      )}
+    </TouchableOpacity>
+  );
+});
+
 export default function ProductScreen() {
-  const { products, categories, isLoading, error, getProducts, getCategories } = useProducts();
-  const params = useLocalSearchParams<{ categoryId?: string | string[]; categoryName?: string | string[] }>();
-  const route = useRoute<any>();
+  const r = useResponsive();
+  const insets = useSafeAreaInsets();
+  const columns = r.width >= 1300 ? 4 : r.width >= 700 ? 3 : 2;
+  const styles = useMemo(
+    () => createStyles(r, insets, columns),
+    [r.width, r.height, insets.bottom, insets.left, insets.right, columns],
+  );
+
+  const { products, categories, isLoading, error, getProducts, getCategories } =
+    useProducts();
+  const { addItem } = useCart();
+  const params = useLocalSearchParams<{
+    categoryId?: string | string[];
+    categoryName?: string | string[];
+  }>();
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
+    null,
+  );
+  const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
-  const safeProducts = Array.isArray(products) ? products : [];
-  const safeCategories = Array.isArray(categories) ? categories : [];
+  const safeProducts = Array.isArray(products) ? products : EMPTY_LIST;
+  const safeCategories = Array.isArray(categories) ? categories : EMPTY_LIST;
+
+  const categoryIdFromQuery = firstParam(params.categoryId);
+  const categoryNameFromQuery = firstParam(params.categoryName);
 
   useEffect(() => {
     void getProducts();
@@ -56,29 +123,19 @@ export default function ProductScreen() {
   }, [getCategories, getProducts]);
 
   useEffect(() => {
-    const categoryIdFromQuery = Array.isArray(params.categoryId) ? params.categoryId[0] : params.categoryId;
-    const categoryIdFromRoute = Array.isArray(route?.params?.categoryId)
-      ? route.params.categoryId[0]
-      : route?.params?.categoryId;
-    setSelectedCategoryId(categoryIdFromRoute || categoryIdFromQuery || null);
-  }, [params.categoryId, route?.params?.categoryId]);
+    setSelectedCategoryId(categoryIdFromQuery || null);
+  }, [categoryIdFromQuery]);
 
   const selectedCategoryLabel = useMemo(() => {
     if (!selectedCategoryId) {
-      return 'Tất cả danh mục';
+      return "Tất cả danh mục";
     }
 
-    const matchedCategory = safeCategories.find((category) => category?._id === selectedCategoryId);
-    if (matchedCategory?.name) {
-      return matchedCategory.name;
-    }
-
-    const categoryNameFromQuery = Array.isArray(params.categoryName) ? params.categoryName[0] : params.categoryName;
-    const categoryNameFromRoute = Array.isArray(route?.params?.categoryName)
-      ? route.params.categoryName[0]
-      : route?.params?.categoryName;
-    return categoryNameFromRoute || categoryNameFromQuery || 'Danh mục';
-  }, [params.categoryName, route?.params?.categoryName, safeCategories, selectedCategoryId]);
+    const matchedCategory = safeCategories.find(
+      (category) => category?._id === selectedCategoryId,
+    );
+    return matchedCategory?.name || categoryNameFromQuery || "Danh mục";
+  }, [categoryNameFromQuery, safeCategories, selectedCategoryId]);
 
   const filteredProducts = useMemo(() => {
     if (!selectedCategoryId) {
@@ -93,20 +150,58 @@ export default function ProductScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await getProducts();
-    await getCategories();
-    setRefreshing(false);
+    try {
+      await Promise.all([getProducts(), getCategories()]);
+    } finally {
+      setRefreshing(false);
+    }
   }, [getProducts, getCategories]);
 
-  const handleAddToCart = useCallback((_productId?: string) => {
-    return undefined;
+  // Trước đây hàm này không làm gì cả; giờ thêm sản phẩm vào giỏ như ở màn hình Mua hàng
+  const handleAddToCart = useCallback(
+    async (product: any) => {
+      try {
+        await addItem(
+          product._id,
+          1,
+          product.prices?.[0]?.price || product.price || 0,
+        );
+        Alert.alert("Thành công", `${product.name} đã được thêm vào giỏ hàng!`);
+      } catch (err: any) {
+        Alert.alert(
+          "Lỗi",
+          err.message || "Không thể thêm sản phẩm vào giỏ hàng",
+        );
+      }
+    },
+    [addItem],
+  );
+
+  const openCategoryMenu = useCallback(() => setShowCategoryMenu(true), []);
+  const closeCategoryMenu = useCallback(() => setShowCategoryMenu(false), []);
+
+  const selectCategory = useCallback((id: string | null) => {
+    setSelectedCategoryId(id);
+    setShowCategoryMenu(false);
   }, []);
 
+  const keyExtractor = useCallback(
+    (item: any, index: number) => item?._id || `product-${index}`,
+    [],
+  );
+
+  // `styles` phải nằm trong deps, nếu không khi xoay màn hình hoặc đổi kích thước
+  // các hàng sản phẩm vẫn dùng bề rộng thẻ cũ
   const renderItem = useCallback(
     ({ item }: { item: any }) => (
-      <ProductListRow item={item} viewMode={viewMode} onAddToCart={handleAddToCart} />
+      <ProductListRow
+        item={item}
+        viewMode={viewMode}
+        onAddToCart={handleAddToCart}
+        styles={styles}
+      />
     ),
-    [viewMode, handleAddToCart]
+    [viewMode, handleAddToCart, styles],
   );
 
   if (isLoading && safeProducts.length === 0) {
@@ -126,100 +221,143 @@ export default function ProductScreen() {
       <View style={styles.toolbar}>
         <TouchableOpacity
           style={styles.combobox}
-          onPress={() => setShowCategoryMenu(true)}
+          onPress={openCategoryMenu}
           activeOpacity={0.8}
         >
-          <Ionicons name="pricetag-outline" size={14} color="#f10e0e" style={{ marginRight: 6 }} />
+          <Ionicons
+            name="pricetag-outline"
+            size={15}
+            color={theme.colors.primary}
+            style={{ marginRight: 8 }}
+          />
           <Text style={styles.comboboxText} numberOfLines={1}>
             {selectedCategoryLabel}
           </Text>
-          <Ionicons name="chevron-down" size={16} color="#999" />
+          <Ionicons
+            name="chevron-down"
+            size={16}
+            color={theme.colors.textMuted}
+          />
         </TouchableOpacity>
 
         <View style={styles.toggleRow}>
           <TouchableOpacity
-            style={[styles.toggleButton, viewMode === 'card' && styles.toggleButtonActive]}
-            onPress={() => setViewMode('card')}
+            style={[
+              styles.toggleButton,
+              viewMode === "card" && styles.toggleButtonActive,
+            ]}
+            onPress={() => setViewMode("card")}
             activeOpacity={0.8}
           >
-            <Ionicons name="grid" size={16} color={viewMode === 'card' ? '#fff' : '#888'} />
+            <Ionicons
+              name="grid"
+              size={16}
+              color={
+                viewMode === "card"
+                  ? theme.colors.onPrimary
+                  : theme.colors.textMuted
+              }
+            />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.toggleButton, viewMode === 'list' && styles.toggleButtonActive]}
-            onPress={() => setViewMode('list')}
+            style={[
+              styles.toggleButton,
+              viewMode === "list" && styles.toggleButtonActive,
+            ]}
+            onPress={() => setViewMode("list")}
             activeOpacity={0.8}
           >
-            <Ionicons name="list" size={16} color={viewMode === 'list' ? '#fff' : '#888'} />
+            <Ionicons
+              name="list"
+              size={16}
+              color={
+                viewMode === "list"
+                  ? theme.colors.onPrimary
+                  : theme.colors.textMuted
+              }
+            />
           </TouchableOpacity>
         </View>
       </View>
-
-      <FlatList
-        key={viewMode}
-        data={filteredProducts}
-        keyExtractor={(item, index) => item?._id || `product-${index}`}
-        numColumns={viewMode === 'card' ? 2 : 1}
-        columnWrapperStyle={viewMode === 'card' ? styles.row : undefined}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f10e0e" />}
-        renderItem={renderItem}
-        ListEmptyComponent={
-          !isLoading ? (
-            <EmptyState
-              title="Không có sản phẩm"
-              description="Hãy quay lại sau để xem thêm sản phẩm mới"
+      <View style={styles.wrapper}>
+        <FlatList
+          key={`${viewMode}-${columns}`}
+          data={filteredProducts}
+          keyExtractor={keyExtractor}
+          numColumns={viewMode === "card" ? columns : 1}
+          columnWrapperStyle={viewMode === "card" ? styles.row : undefined}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colors.primary}
+              colors={[theme.colors.primary]}
             />
-          ) : null
-        }
-      />
-
+          }
+          renderItem={renderItem}
+          ListEmptyComponent={
+            !isLoading ? (
+              <EmptyState
+                title="Không có sản phẩm"
+                description="Hãy quay lại sau để xem thêm sản phẩm mới"
+              />
+            ) : null
+          }
+        />
+      </View>
       <Modal
         visible={showCategoryMenu}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowCategoryMenu(false)}
+        onRequestClose={closeCategoryMenu}
       >
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCategoryMenu(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalCard} onPress={() => {}}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={closeCategoryMenu}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.modalCard}
+            onPress={() => {}}
+          >
             <View style={styles.modalHandle} />
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>Chọn danh mục</Text>
-              <TouchableOpacity onPress={() => setShowCategoryMenu(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close" size={20} color="#999" />
+              <TouchableOpacity
+                onPress={closeCategoryMenu}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons
+                  name="close"
+                  size={22}
+                  color={theme.colors.textMuted}
+                />
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={[styles.optionItem, !selectedCategoryId && styles.optionItemActive]}
-              onPress={() => {
-                setSelectedCategoryId(null);
-                setShowCategoryMenu(false);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.optionText, !selectedCategoryId && styles.optionTextActive]}>Tất cả</Text>
-              {!selectedCategoryId && <Ionicons name="checkmark" size={18} color="#f10e0e" />}
-            </TouchableOpacity>
-
-            {safeCategories.map((category) => {
-              const isActive = selectedCategoryId === category?._id;
-              return (
-                <TouchableOpacity
-                  key={category?._id || category?.name}
-                  style={[styles.optionItem, isActive && styles.optionItemActive]}
-                  onPress={() => {
-                    setSelectedCategoryId(category?._id || null);
-                    setShowCategoryMenu(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.optionText, isActive && styles.optionTextActive]}>
-                    {category?.name || 'Danh mục'}
-                  </Text>
-                  {isActive && <Ionicons name="checkmark" size={18} color="#f10e0e" />}
-                </TouchableOpacity>
-              );
-            })}
+            {/* ScrollView để danh sách dài vẫn cuộn được trong giới hạn chiều cao của modal */}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <CategoryOption
+                id={null}
+                label="Tất cả"
+                isActive={!selectedCategoryId}
+                onSelect={selectCategory}
+                styles={styles}
+              />
+              {safeCategories.map((category, index) => (
+                <CategoryOption
+                  key={category?._id || category?.name || `category-${index}`}
+                  id={category?._id || null}
+                  label={category?.name || "Danh mục"}
+                  isActive={selectedCategoryId === category?._id}
+                  onSelect={selectCategory}
+                  styles={styles}
+                />
+              ))}
+            </ScrollView>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -227,135 +365,159 @@ export default function ProductScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f7',
-  },
-  errorContainer: {
-    marginHorizontal: 14,
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#FFE8E8',
-  },
-  errorText: {
-    color: '#FF3B30',
-    fontSize: 13,
-  },
-  toolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  combobox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 24,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 1,
-  },
-  comboboxText: {
-    color: '#333',
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: '#eceef0',
-    padding: 3,
-    borderRadius: 10,
-  },
-  toggleButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  toggleButtonActive: {
-    backgroundColor: '#f10e0e',
-  },
-  listContent: {
-    paddingHorizontal: 14,
-    paddingBottom: 24,
-  },
-  row: {
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  cardWrapper: {
-    width: '48%',
-    marginBottom: 14,
-  },
-  listWrapper: {
-    width: '100%',
-    marginBottom: 10,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-  },
-  modalCard: {
-    width: '100%',
-    maxHeight: '70%',
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 24,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#e0e0e0',
-    alignSelf: 'center',
-    marginBottom: 14,
-  },
-  modalHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#222',
-  },
-  optionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 13,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-  },
-  optionItemActive: {
-    backgroundColor: '#fce8e8',
-  },
-  optionText: {
-    color: '#333',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  optionTextActive: {
-    color: '#f10e0e',
-    fontWeight: '700',
-  },
-});
+const createStyles = (
+  r: ReturnType<typeof useResponsive>,
+  insets: { bottom: number; left: number; right: number },
+  columns: number,
+) => {
+  const sideMargin = r.ms(16);
+  const gap = r.ms(12);
+  const contentWidth = Math.min(
+    Math.max(0, r.width - sideMargin * 2 - insets.left - insets.right),
+    MAX_CONTENT_WIDTH,
+  );
+  const cardWidth = Math.floor((contentWidth - gap * (columns - 1)) / columns);
+
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    errorContainer: {
+      width: contentWidth,
+      alignSelf: "center",
+      marginTop: r.ms(8),
+      padding: r.ms(12),
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.dangerBg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.primaryBorder,
+    },
+    errorText: {
+      color: theme.colors.danger,
+      fontSize: r.font(13),
+    },
+    toolbar: {
+      width: contentWidth,
+      alignSelf: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: r.ms(12),
+      gap,
+    },
+    combobox: {
+      flexDirection: "row",
+      alignItems: "center",
+      flex: 1,
+      paddingHorizontal: r.ms(14),
+      paddingVertical: r.ms(11),
+      borderRadius: theme.radius.pill,
+      backgroundColor: theme.colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+    },
+    comboboxText: {
+      color: theme.colors.text,
+      fontSize: r.font(13),
+      fontWeight: "600",
+      flex: 1,
+    },
+    // Danh sách sản phẩm nằm trực tiếp trên nền, không còn hộp bao ngoài
+    wrapper: {
+      flex: 1,
+      width: contentWidth,
+      alignSelf: "center",
+    },
+    toggleRow: {
+      flexDirection: "row",
+      gap: r.ms(4),
+      backgroundColor: theme.colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+      padding: r.ms(3),
+      borderRadius: theme.radius.md,
+    },
+    toggleButton: {
+      width: r.ms(34),
+      height: r.ms(34),
+      borderRadius: theme.radius.sm,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    toggleButtonActive: {
+      backgroundColor: theme.colors.primary,
+    },
+    listContent: {
+      paddingTop: r.ms(4),
+      paddingBottom: insets.bottom + r.ms(24),
+    },
+    row: {
+      gap,
+    },
+    cardWrapper: {
+      width: cardWidth,
+      marginBottom: gap,
+    },
+    listWrapper: {
+      width: "100%",
+      marginBottom: r.ms(10),
+    },
+    modalOverlay: {
+      flex: 1,
+      justifyContent: "flex-end",
+      alignItems: "center",
+      backgroundColor: theme.colors.overlay,
+    },
+    modalCard: {
+      width: "100%",
+      maxWidth: 640,
+      maxHeight: r.height * 0.7,
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: theme.radius.xl,
+      borderTopRightRadius: theme.radius.xl,
+      paddingHorizontal: r.ms(18),
+      paddingTop: r.ms(10),
+      paddingBottom: insets.bottom + r.ms(24),
+    },
+    modalHandle: {
+      width: r.ms(40),
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: theme.colors.border,
+      alignSelf: "center",
+      marginBottom: r.ms(14),
+    },
+    modalHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: r.ms(8),
+    },
+    modalTitle: {
+      fontSize: r.font(17),
+      fontWeight: "800",
+      color: theme.colors.text,
+    },
+    optionItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: r.ms(13),
+      paddingHorizontal: r.ms(12),
+      borderRadius: theme.radius.md,
+    },
+    optionItemActive: {
+      backgroundColor: theme.colors.primarySoft,
+    },
+    optionText: {
+      color: theme.colors.text,
+      fontSize: r.font(14),
+      fontWeight: "500",
+    },
+    optionTextActive: {
+      color: theme.colors.primary,
+      fontWeight: "700",
+    },
+  });
+};

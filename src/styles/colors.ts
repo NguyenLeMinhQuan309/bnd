@@ -40,5 +40,11 @@ export const Colors = {
   borderLight: '#F0F0F0',
 
   // Tittle
-  titleColor:'#00d9ff'
+  // titleColor:'#00d9ff',
+  titleColor:'#0f0a0a',
+
+  backgroundColor: "rgb(178, 242, 187  )",
+  containerBackgroundColor:'#f5f5f7',
+  priceColor:'#f10e0e',
+  buttonBackgroundColor:'#008f00',
 };
