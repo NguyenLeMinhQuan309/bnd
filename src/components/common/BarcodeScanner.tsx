@@ -388,7 +388,6 @@ const createStyles = (
       alignItems: "center",
     },
 
-    // Khung quét: viền mờ + 4 góc đỏ đậm thay cho viền đỏ kín
     scanFrame: {
       width: frameWidth,
       height: frameHeight,

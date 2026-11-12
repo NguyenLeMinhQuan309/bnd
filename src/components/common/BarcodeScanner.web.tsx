@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, View, Text, TouchableOpacity } from "react-native";
+import { theme } from "../../styles/theme";
 
 interface Props {
   isVisible: boolean;
@@ -236,7 +237,7 @@ const WebScanner = ({
             maxWidth: 480,
             aspectRatio: 5 / 3,
             borderWidth: 2,
-            borderColor: "#f10e0e",
+            borderColor: theme.colors.primary,
             borderRadius: 20,
           }}
         />
@@ -262,7 +263,7 @@ const WebScanner = ({
             position: "absolute",
             bottom: 48,
             alignSelf: "center",
-            backgroundColor: "#f10e0e",
+            backgroundColor: theme.colors.primary,
             paddingVertical: 12,
             paddingHorizontal: 24,
             borderRadius: 12,
