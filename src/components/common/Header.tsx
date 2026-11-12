@@ -64,12 +64,12 @@ export const Header: React.FC<HeaderProps> = ({
     null,
   );
 
-  const loadNotifications = React.useCallback(async () => {
-    try {
-      const storedUser = await AsyncStorage.getItem("user");
-      const customerCode = storedUser ? JSON.parse(storedUser).code : "";
-      if (!customerCode) return;
+  const customerCode = user?.code;
 
+  const loadNotifications = React.useCallback(async () => {
+    if (!customerCode) return;
+
+    try {
       const storedReadIds = await AsyncStorage.getItem(
         `readNotifications:${customerCode}`,
       );
@@ -80,9 +80,11 @@ export const Header: React.FC<HeaderProps> = ({
     } catch (error) {
       console.warn("Không thể tải thông báo:", error);
     }
-  }, []);
+  }, [customerCode]);
 
   React.useEffect(() => {
+    if (!customerCode) return;
+
     const initialLoad = setTimeout(() => {
       void loadNotifications();
     }, 0);
@@ -93,11 +95,11 @@ export const Header: React.FC<HeaderProps> = ({
       clearTimeout(initialLoad);
       clearInterval(interval);
     };
-  }, [loadNotifications]);
+  }, [customerCode, loadNotifications]);
 
   const toggleNotificationModal = () => {
     setNotificationModalVisible((prev) => !prev);
-    if (!isNotificationModalVisible) loadNotifications();
+    if (!isNotificationModalVisible) void loadNotifications();
   };
 
   const unreadCount = notifications.filter(
@@ -107,8 +109,6 @@ export const Header: React.FC<HeaderProps> = ({
   const handleNotificationPress = async (
     notification: CustomerNotification,
   ) => {
-    const storedUser = await AsyncStorage.getItem("user");
-    const customerCode = storedUser ? JSON.parse(storedUser).code : "";
     const nextReadIds = readNotificationIds.includes(notification._id)
       ? readNotificationIds
       : [...readNotificationIds, notification._id];

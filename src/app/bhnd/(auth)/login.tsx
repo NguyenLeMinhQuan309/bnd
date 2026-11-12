@@ -1,5 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { View, ScrollView, StyleSheet, Text } from "react-native";
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+} from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -23,14 +29,20 @@ export default function LoginScreen() {
 
   const { setUserFromBarcode, isLoading, error } = useAuth();
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(true);
+  const [employeeCode, setEmployeeCode] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleBarcodeScan = async (scannedCode: string) => {
+  const handleLogin = async (inputCode: string) => {
+    const code = inputCode.trim();
+    if (!code) {
+      setLoginError("Vui lòng nhập mã nhân viên.");
+      return;
+    }
+
     setShowBarcodeScanner(false);
     setIsProcessing(true);
     setLoginError(null);
-    const code = scannedCode.trim();
 
     try {
       // Lấy dữ liệu khách hàng từ backend
@@ -42,15 +54,12 @@ export default function LoginScreen() {
       // Điều hướng đến trang chủ
       navigator.replace("/bhnd/(main)/home");
     } catch (err: any) {
-      console.error("Barcode scan error:", err);
+      console.error("Employee login error:", err);
       setLoginError(
-        err.message || "Không tìm thấy dữ liệu nhân viên. Vui lòng quét lại.",
+        err.message || "Không tìm thấy dữ liệu nhân viên. Vui lòng kiểm tra mã.",
       );
-      // Mở barcode scanner lại nếu lỗi
-      setTimeout(() => {
-        setShowBarcodeScanner(true);
-        setIsProcessing(false);
-      }, 1500);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -75,7 +84,7 @@ export default function LoginScreen() {
             Bannoidia
           </Text>
           <Text style={styles.subtitle} maxFontSizeMultiplier={1.3}>
-            Quét mã để đăng nhập
+            Nhập mã nhân viên hoặc quét mã để đăng nhập
           </Text>
         </View>
 
@@ -95,34 +104,47 @@ export default function LoginScreen() {
           </View>
         )}
 
-        {!showBarcodeScanner && (
-          <View style={styles.scanningContainer}>
-            <Text style={styles.scanningText} maxFontSizeMultiplier={1.3}>
-              {isProcessing ? "Đang lấy dữ liệu..." : "Bấm nút dưới để quét mã"}
-            </Text>
-            <Button
-              label="Mở camera"
-              onPress={() => setShowBarcodeScanner(true)}
-              loading={isProcessing || isLoading}
-              style={styles.reopenButton}
-            />
-            <Button
-              label="Đăng nhập"
-              onPress={() => handleBarcodeScan("V148")} // Thay "1234567890" bằng mã nhân viên mẫu
-              loading={isProcessing || isLoading}
-              style={[styles.reopenButton, { marginTop: 10 }]}
-            />
-          </View>
-        )}
+        <View style={styles.loginContainer}>
+          <TextInput
+            accessibilityLabel="Mã nhân viên"
+            style={styles.codeInput}
+            value={employeeCode}
+            onChangeText={(value) => {
+              setEmployeeCode(value);
+              setLoginError(null);
+            }}
+            placeholder="Nhập mã nhân viên"
+            placeholderTextColor={theme.colors.textMuted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            returnKeyType="go"
+            onSubmitEditing={() => void handleLogin(employeeCode)}
+            editable={!isProcessing && !isLoading}
+          />
+          <Button
+            label="Đăng nhập"
+            onPress={() => void handleLogin(employeeCode)}
+            loading={isProcessing || isLoading}
+            style={styles.reopenButton}
+          />
+          <Button
+            label="Quét mã bằng camera"
+            variant="secondary"
+            onPress={() => {
+              setLoginError(null);
+              setShowBarcodeScanner(true);
+            }}
+            disabled={isProcessing || isLoading}
+            style={styles.scanButton}
+          />
+        </View>
       </View>
 
       <BarcodeScanner
         isVisible={showBarcodeScanner}
-        onBarCodeScanned={handleBarcodeScan}
+        onBarCodeScanned={handleLogin}
         onClose={() => {
           setShowBarcodeScanner(false);
-          setLoginError(null);
-          setIsProcessing(false);
         }}
         title="Quét mã nhân viên"
       />
@@ -192,27 +214,40 @@ const createStyles = (
       fontSize: r.font(14),
       fontWeight: "500",
     },
-    scanningContainer: {
-      alignItems: "center",
-      paddingVertical: r.ms(32),
-      paddingHorizontal: r.ms(24),
+    loginContainer: {
+      padding: r.ms(24),
       backgroundColor: theme.colors.surface,
       borderRadius: theme.radius.xl,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: theme.colors.border,
       ...theme.shadow.card,
     },
-    scanningText: {
-      fontSize: r.font(16),
+    codeInput: {
+      width: "100%",
+      maxWidth: 280,
+      alignSelf: "center",
+      backgroundColor: theme.colors.background,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      paddingHorizontal: r.ms(14),
+      paddingVertical: r.ms(12),
+      marginBottom: r.ms(12),
       color: theme.colors.text,
-      marginBottom: r.ms(20),
-      textAlign: "center",
-      fontWeight: "500",
+      fontSize: r.font(16),
     },
     reopenButton: {
       width: "100%",
       maxWidth: 280,
       backgroundColor: theme.colors.primary,
       borderRadius: theme.radius.md,
+      alignSelf: "center",
+    },
+    scanButton: {
+      width: "100%",
+      maxWidth: 280,
+      borderRadius: theme.radius.md,
+      alignSelf: "center",
+      marginTop: r.ms(10),
     },
   });
